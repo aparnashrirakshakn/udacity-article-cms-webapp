@@ -63,12 +63,14 @@ def post(id):
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
+        app.logger.info("Admin logged in successfully")
         return redirect(url_for('home'))
     form = LoginForm()
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data).first()
         if user is None or not user.check_password(form.password.data):
             flash('Invalid username or password')
+            app.logger.error("Invalid login attempt")
             return redirect(url_for('login'))
         login_user(user, remember=form.remember_me.data)
         next_page = request.args.get('next')
@@ -84,6 +86,7 @@ def authorized():
     if request.args.get('state') != session.get("state"):
         return redirect(url_for("home"))  # No-OP. Goes back to Index page
     if "error" in request.args:  # Authentication/Authorization failure
+        app.logger.error("Invalid login attempt")
         return render_template("auth_error.html", result=request.args)
     if request.args.get('code'):
         cache = _load_cache()
@@ -93,6 +96,7 @@ def authorized():
             redirect_uri = url_for("authorized", _external = True, _scheme = "https")
         )
         if "error" in result:
+            app.logger.error("Invalid login attempt")
             return render_template("auth_error.html", result=result)
         session["user"] = result.get("id_token_claims")
         # Note: In a real app, we'd use the 'name' property from session["user"] below
@@ -117,13 +121,8 @@ def logout():
 
 def _load_cache():
     cache = msal.SerializableTokenCache()
-    if os.path.exists("my_cache.bin"):
-        cache.deserialize(open("my_cache.bin", "r").read())
-    atexit.register(lambda:
-        open("my_cache.bin", "w").write(cache.serialize())
-        # Hint: The following optional line persists only when state changed
-        if cache.has_state_changed else None
-        )
+    if session.get('token_cache'):
+        cache.deserialize(session['token_cache'])
     return cache
 
 def _save_cache(cache):
